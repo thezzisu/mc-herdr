@@ -1,8 +1,10 @@
 import net from "node:net";
+import { execFileSync } from "node:child_process";
 const SOURCE = "herdr:opencode";
 const AGENT = "opencode";
 const DISPLAY_AGENT = "mimocode";
 let reportSeq = Date.now() * 1000;
+let released = false;
 function nextReportSeq() {
     reportSeq += 1;
     return reportSeq;
@@ -67,8 +69,37 @@ function reportDisplayAgent() {
         display_agent: DISPLAY_AGENT,
     });
 }
-function releaseAgent() {
+async function releaseAgent() {
+    if (released)
+        return;
+    released = true;
     return request("pane.release_agent", {});
+}
+function releaseAgentSync() {
+    if (released)
+        return;
+    released = true;
+    const paneId = process.env.HERDR_PANE_ID;
+    const socketPath = process.env.HERDR_SOCKET_PATH;
+    if (!paneId || !socketPath)
+        return;
+    const payload = JSON.stringify({
+        id: `release:${Date.now()}`,
+        method: "pane.release_agent",
+        params: { pane_id: paneId, source: SOURCE, agent: AGENT },
+    });
+    try {
+        execFileSync("node", ["-e", `require("net").createConnection(${JSON.stringify(socketPath)}).end(${JSON.stringify(payload)}+"\\n")`], {
+            timeout: 500,
+            stdio: "ignore",
+        });
+    }
+    catch { }
+}
+function registerExitHandlers() {
+    process.once("SIGINT", () => { releaseAgentSync(); process.exit(130); });
+    process.once("SIGTERM", () => { releaseAgentSync(); process.exit(143); });
+    process.on("beforeExit", () => { releaseAgentSync(); });
 }
 export const HerdrAgentState = async () => {
     if (process.env.HERDR_ENV !== "1" ||
@@ -76,6 +107,7 @@ export const HerdrAgentState = async () => {
         !process.env.HERDR_PANE_ID) {
         return {};
     }
+    registerExitHandlers();
     await reportState("idle");
     await reportDisplayAgent();
     return {
