@@ -1,4 +1,5 @@
 import net from "node:net"
+import { execFileSync } from "node:child_process"
 
 const SOURCE = "herdr:opencode"
 const AGENT = "opencode"
@@ -87,14 +88,34 @@ function releaseAgent() {
   return request("pane.release_agent", {})
 }
 
+function releaseAgentSync() {
+  if (released) return
+  released = true
+  const paneId = process.env.HERDR_PANE_ID
+  const socketPath = process.env.HERDR_SOCKET_PATH
+  if (!paneId || !socketPath) return
+  const payload = JSON.stringify({
+    id: `release:${Date.now()}`,
+    method: "pane.release_agent",
+    params: { pane_id: paneId, source: SOURCE, agent: AGENT },
+  })
+  try {
+    execFileSync(
+      process.execPath,
+      ["-e", `require("net").createConnection(${JSON.stringify(socketPath)}).end(${JSON.stringify(payload)}+"\\n")`],
+      { timeout: 500, stdio: "ignore" },
+    )
+  } catch {}
+}
+
 function registerExitHandlers() {
-  const onExit = () => {
-    const p = releaseAgent()
-    p.catch(() => {})
+  const onSignal = () => {
+    releaseAgentSync()
+    process.exit(0)
   }
-  process.once("SIGINT", onExit)
-  process.once("SIGTERM", onExit)
-  process.on("beforeExit", onExit)
+  process.once("SIGINT", onSignal)
+  process.once("SIGTERM", onSignal)
+  process.on("beforeExit", () => { releaseAgentSync() })
 }
 
 export const HerdrAgentState = async () => {
