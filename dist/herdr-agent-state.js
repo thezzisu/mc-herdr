@@ -1,5 +1,4 @@
 import net from "node:net";
-import { execFileSync } from "node:child_process";
 const SOURCE = "herdr:opencode";
 const AGENT = "opencode";
 const DISPLAY_AGENT = "mimocode";
@@ -17,31 +16,19 @@ function sessionIDFromProperties(properties) {
 function request(method, params) {
     const paneId = process.env.HERDR_PANE_ID;
     const socketPath = process.env.HERDR_SOCKET_PATH;
-    if (!paneId || !socketPath) {
+    if (!paneId || !socketPath)
         return Promise.resolve();
-    }
-    const requestId = `${SOURCE}:${Date.now()}:${Math.floor(Math.random() * 1_000_000)
-        .toString()
-        .padStart(6, "0")}`;
+    const requestId = `${SOURCE}:${Date.now()}:${Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0")}`;
     const req = {
         id: requestId,
         method,
-        params: {
-            pane_id: paneId,
-            source: SOURCE,
-            agent: AGENT,
-            seq: nextReportSeq(),
-            ...params,
-        },
+        params: { pane_id: paneId, source: SOURCE, agent: AGENT, seq: nextReportSeq(), ...params },
     };
     return new Promise((resolve) => {
         const client = net.createConnection(socketPath, () => {
             client.write(`${JSON.stringify(req)}\n`);
         });
-        const finish = () => {
-            client.destroy();
-            resolve();
-        };
+        const finish = () => { client.destroy(); resolve(); };
         client.setTimeout(500, finish);
         client.on("data", finish);
         client.on("error", finish);
@@ -50,16 +37,14 @@ function request(method, params) {
     });
 }
 function reportSession(sessionID) {
-    if (!sessionID) {
+    if (!sessionID)
         return Promise.resolve();
-    }
     return request("pane.report_agent_session", { agent_session_id: sessionID });
 }
 function reportState(state, sessionID) {
     const params = { state };
-    if (sessionID) {
+    if (sessionID)
         params.agent_session_id = sessionID;
-    }
     return request("pane.report_agent", params);
 }
 function reportDisplayAgent() {
@@ -89,23 +74,31 @@ function releaseAgentSync() {
         params: { pane_id: paneId, source: SOURCE, agent: AGENT },
     });
     try {
-        execFileSync(process.execPath, ["-e", `require("net").createConnection(${JSON.stringify(socketPath)}).end(${JSON.stringify(payload)}+"\\n")`], { timeout: 500, stdio: "ignore" });
+        const { Worker } = require("node:worker_threads");
+        const sab = new SharedArrayBuffer(4);
+        const signal = new Int32Array(sab);
+        const worker = new Worker(`const{createConnection}=require("net");
+       const{workerData,Worker}=require("worker_threads");
+       const{path,payload,sab}=workerData;
+       const sig=new Int32Array(sab);
+       const s=createConnection(path);
+       s.on("connect",()=>s.end(payload+"\\n"));
+       s.on("close",()=>{Atomics.store(sig,0,1);Atomics.notify(sig,0)});
+       s.on("error",()=>{Atomics.store(sig,0,1);Atomics.notify(sig,0)});
+       s.setTimeout(400,()=>s.destroy())`, { eval: true, workerData: { path: socketPath, payload, sab } });
+        Atomics.wait(signal, 0, 0, 500);
+        worker.terminate();
     }
     catch { }
 }
 function registerExitHandlers() {
-    const onSignal = () => {
-        releaseAgentSync();
-        process.exit(0);
-    };
+    const onSignal = () => { releaseAgentSync(); process.exit(0); };
     process.once("SIGINT", onSignal);
     process.once("SIGTERM", onSignal);
     process.on("beforeExit", () => { releaseAgentSync(); });
 }
 export const HerdrAgentState = async () => {
-    if (process.env.HERDR_ENV !== "1" ||
-        !process.env.HERDR_SOCKET_PATH ||
-        !process.env.HERDR_PANE_ID) {
+    if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_SOCKET_PATH || !process.env.HERDR_PANE_ID) {
         return {};
     }
     registerExitHandlers();
@@ -126,14 +119,10 @@ export const HerdrAgentState = async () => {
                     break;
                 case "session.status": {
                     const info = properties.status;
-                    if (info && typeof info === "object" && typeof info.type === "string") {
-                        if (info.type === "idle") {
-                            await reportState("idle", sessionID);
-                        }
-                        else if (info.type === "busy") {
-                            await reportState("working", sessionID);
-                        }
-                    }
+                    if (info?.type === "idle")
+                        await reportState("idle", sessionID);
+                    else if (info?.type === "busy")
+                        await reportState("working", sessionID);
                     break;
                 }
                 case "tool.execute.before":
@@ -154,8 +143,6 @@ export const HerdrAgentState = async () => {
                     break;
                 case "session.deleted":
                     await releaseAgent();
-                    break;
-                default:
                     break;
             }
         },
