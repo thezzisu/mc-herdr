@@ -1,6 +1,6 @@
 {
   "name": "mimocode-herdr",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Herdr integration plugin for MiMo Code — reports agent state to herdr terminal workspace manager",
   "type": "module",
   "main": "dist/herdr-agent-state.js",
