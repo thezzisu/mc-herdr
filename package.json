@@ -1,0 +1,38 @@
+{
+  "name": "mimocode-herdr",
+  "version": "0.1.0",
+  "description": "Herdr integration plugin for MiMo Code — reports agent state to herdr terminal workspace manager",
+  "type": "module",
+  "main": "dist/herdr-agent-state.js",
+  "exports": {
+    ".": {
+      "import": "./dist/herdr-agent-state.js",
+      "types": "./dist/herdr-agent-state.d.ts"
+    },
+    "./server": {
+      "import": "./dist/herdr-agent-state.js",
+      "types": "./dist/herdr-agent-state.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "mimocode": ">=0.1.0"
+  },
+  "keywords": [
+    "mimocode",
+    "mimocode-plugin",
+    "herdr",
+    "terminal",
+    "workspace"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
